@@ -30,6 +30,7 @@
 - (GIMMe *)gimme;
 - (void)setGimme:(GIMMe *)gimme;
 - (void)initializePictureInPicture;
+- (BOOL)startPictureInPicture;
 @end
 
 @interface MLRemoteStream : NSObject
@@ -48,8 +49,11 @@
 - (MLVideo *)video;
 @end
 
+@class YTLocalPlaybackController;
+
 @interface YTSingleVideoController : NSObject
 - (YTSingleVideo *)videoData;
+- (YTLocalPlaybackController *)delegate;
 @end
 
 @interface YTPlaybackControllerUIWrapper : NSObject
@@ -61,12 +65,19 @@
 - (YTPlaybackControllerUIWrapper *)playerViewDelegate;
 @end
 
+@interface YTPlayerPIPController : NSObject
+- (BOOL)canInvokePictureInPicture;
+@end
+
+@interface YTLocalPlaybackController : NSObject {
+    YTPlayerPIPController *_playerPIPController;
+}
+@end
+
 @interface GIMBindingBuilder : NSObject
 - (GIMBindingBuilder *)bindType:(Class)type;
 - (GIMBindingBuilder *)initializedWith:(id (^)(id))block;
 @end
-
-BOOL pipEnabled = YES;
 
 %hook YTPlayerView
 
@@ -81,13 +92,11 @@ BOOL pipEnabled = YES;
 %new
 - (void)yt_togglePIP:(UILongPressGestureRecognizer *)sender {
     if (sender.state == UIGestureRecognizerStateEnded) {
-        pipEnabled = !pipEnabled;
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"PiP Status" message:pipEnabled ? @"On\n(Your video might need to be closed at reopened)" : @"Off" preferredStyle:UIAlertControllerStyleAlert];
-        [self.window.rootViewController presentViewController:alert animated:YES completion:^(void) { 
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                [alert dismissViewControllerAnimated:YES completion:NULL];
-            });
-        }];
+        YTSingleVideoController *single = [(YTPlaybackControllerUIWrapper *)[self valueForKey:@"_playerViewDelegate"] contentVideo];
+        YTLocalPlaybackController *local = [single delegate];
+        YTPlayerPIPController *controller = [local valueForKey:@"_playerPIPController"];
+        if ([controller canInvokePictureInPicture])
+            [(MLPIPController *)[controller valueForKey:@"_pipController"] startPictureInPicture];
     }
 }
 
@@ -130,8 +139,8 @@ BOOL pipEnabled = YES;
 
 - (BOOL)isPictureInPictureSupported {
 	%orig;
-    [(YTIosMediaHotConfig *)[(YTHotConfig *)[[self gimme] instanceForType:NSClassFromString(@"YTHotConfig")] mediaHotConfig] setEnablePictureInPicture:pipEnabled];
-    return pipEnabled;
+    [(YTIosMediaHotConfig *)[(YTHotConfig *)[[self gimme] instanceForType:NSClassFromString(@"YTHotConfig")] mediaHotConfig] setEnablePictureInPicture:YES];
+    return YES;
 }
 
 %end
@@ -142,7 +151,7 @@ BOOL pipEnabled = YES;
 
 - (void)configureWithBinder:(GIMBindingBuilder *)binder {
     %orig;
-    [[[[binder bindType:NSClassFromString(@"MLPIPController")] retain] autorelease] initializedWith:^(MLPIPController *controller){
+    [[[[binder bindType:NSClassFromString(@"MLPIPController")] retain] autorelease] initializedWith:^(MLPIPController *controller) {
         MLPIPController *value = [controller initWithPlaceholderPlayerItemResourcePath:@"/Library/Application Support/YouPIP/PlaceholderVideo.mp4"];
         [value initializePictureInPicture];
         return value;
@@ -163,6 +172,7 @@ BOOL pipEnabled = YES;
 
 %hook YTIPictureInPictureSupportedRenderers
 
+// Deprecated
 - (BOOL)hasPictureInPictureRenderer {
     return YES;
 }
@@ -190,6 +200,10 @@ BOOL override = NO;
     return orig;
 }
 
+- (void)appWillResignActive:(id)arg {
+    return;
+}
+
 %end
 
 %group LateHook
@@ -207,7 +221,7 @@ BOOL override = NO;
 
 %end
 
-// This will not work on newer versions of YouTube
+// Deprecated
 %hook YTIIosMediaHotConfig
 
 - (BOOL)enablePictureInPicture {
@@ -228,6 +242,17 @@ BOOL override = NO;
 %end
 
 %hook YTIInnertubeResourcesIosRoot
+
++ (GPBExtensionRegistry *)extensionRegistry {
+    GPBExtensionRegistry *registry = %orig;
+    id extension = [NSClassFromString(@"YTIPictureInPictureRendererRoot") pictureInPictureRenderer];
+    [registry addExtension:extension];
+    return registry;
+}
+
+%end
+
+%hook GoogleGlobalExtensionRegistry
 
 + (GPBExtensionRegistry *)extensionRegistry {
     GPBExtensionRegistry *registry = %orig;

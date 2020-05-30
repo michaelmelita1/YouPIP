@@ -1,11 +1,5 @@
 #!/bin/sh
 
-echo "To toggle PiP, TAP and HOLD the video you are watching"
-echo "To toggle PiP, TAP and HOLD the video you are watching"
-echo "To toggle PiP, TAP and HOLD the video you are watching"
-
-echo ""
-
-echo "If PiP doesn't work even with PiP enabled, close and reopen the video"
-echo "If PiP doesn't work even with PiP enabled, close and reopen the video"
-echo "If PiP doesn't work even with PiP enabled, close and reopen the video"
+echo "To trigger PiP, TAP and HOLD the video you are watching"
+echo "To trigger PiP, TAP and HOLD the video you are watching"
+echo "To trigger PiP, TAP and HOLD the video you are watching"

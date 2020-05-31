@@ -1,3 +1,5 @@
+#import <UIKit/UIImage+Private.h>
+
 @interface GPBExtensionRegistry : NSObject
 - (void)addExtension:(id)extension;
 @end
@@ -61,6 +63,9 @@
 - (YTSingleVideoController *)contentVideo;
 @end
 
+@interface YTPlayerViewController : UIViewController
+@end
+
 @interface YTPlayerView : UIView
 - (YTPlaybackControllerUIWrapper *)playerViewDelegate;
 @end
@@ -79,25 +84,120 @@
 - (GIMBindingBuilder *)initializedWith:(id (^)(id))block;
 @end
 
-%hook YTPlayerView
+@interface QTMIcon : NSObject
++ (UIImage *)tintImage:(UIImage *)image color:(UIColor *)color;
+@end
 
-- (id)initWithFrame:(CGRect)frame {
+@interface YTQTMButton : UIButton
+@end
+
+@interface YTMainAppVideoPlayerOverlayView : UIView
+@end
+
+@interface YTMainAppControlsOverlayView : UIView
++ (CGFloat)topButtonAdditionalPadding;
+- (YTQTMButton *)buttonWithImage:(UIImage *)image accessibilityLabel:(NSString *)accessibilityLabel verticalContentPadding:(CGFloat)verticalContentPadding;
+@end
+
+@interface YTMainAppVideoPlayerOverlayViewController : UIViewController
+- (YTMainAppVideoPlayerOverlayView *)videoPlayerOverlayView;
+- (YTPlayerViewController *)delegate;
+@end
+
+@interface YTMainAppControlsOverlayView (YP)
+@property(retain, nonatomic) YTQTMButton *pipButton;
+- (void)didPressPiP:(id)arg;
+- (UIImage *)pipImage;
+@end
+
+@interface YTUIResources : NSObject
+@end
+
+@interface YTPlayerResources : NSObject
+@end
+
+@interface YTColor : NSObject
++ (UIColor *)white1;
+@end
+
+@interface NSMutableArray (YouTube)
+- (void)yt_addNullableObject:(id)object;
+@end
+
+%hook YTMainAppVideoPlayerOverlayViewController
+
+- (void)updateTopRightButtonAvailability {
+    %orig;
+    YTMainAppVideoPlayerOverlayView *v = [self videoPlayerOverlayView];
+    YTMainAppControlsOverlayView *c = [v valueForKey:@"_controlsOverlayView"];
+    c.pipButton.hidden = NO;
+    [c setNeedsLayout];
+}
+
+%end
+
+%hook YTMainAppControlsOverlayView
+
+%property(retain, nonatomic) YTQTMButton *pipButton;
+
+- (id)initWithDelegate:(id)delegate {
     self = %orig;
-    UILongPressGestureRecognizer *gesture = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(yt_togglePIP:)];
-    [self addGestureRecognizer:gesture];
-    [gesture release];
+    if (self) {
+        CGFloat padding = [[self class] topButtonAdditionalPadding];
+        UIImage *image = [self pipImage];
+        self.pipButton = [self buttonWithImage:image accessibilityLabel:@"pip" verticalContentPadding:padding];
+        self.pipButton.hidden = YES;
+        self.pipButton.alpha = 0;
+        [self.pipButton addTarget:self action:@selector(didPressPiP:) forControlEvents:64];
+        [self addSubview:self.pipButton];
+    }
     return self;
 }
 
-%new
-- (void)yt_togglePIP:(UILongPressGestureRecognizer *)sender {
-    if (sender.state == UIGestureRecognizerStateEnded) {
-        YTSingleVideoController *single = [(YTPlaybackControllerUIWrapper *)[self valueForKey:@"_playerViewDelegate"] contentVideo];
-        YTLocalPlaybackController *local = [single delegate];
-        YTPlayerPIPController *controller = [local valueForKey:@"_playerPIPController"];
-        if ([controller canInvokePictureInPicture])
-            [(MLPIPController *)[controller valueForKey:@"_pipController"] startPictureInPicture];
+- (NSMutableArray *)topControls {
+    NSMutableArray *controls = %orig;
+    [controls insertObject:self.pipButton atIndex:0];
+    return controls;
+}
+
+- (void)setTopOverlayVisible:(BOOL)visible isAutonavCanceledState:(BOOL)arg2 {
+    if (visible) {
+        self.pipButton.alpha = 1;
+        self.pipButton.hidden = NO;
+    } else {
+        self.pipButton.alpha = 0;
+        self.pipButton.hidden = YES;
     }
+    %orig;
+}
+
+%new
+- (UIImage *)pipImage {
+    static UIImage *image = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        UIColor *color = [%c(YTColor) white1];
+        image = [UIImage imageWithContentsOfFile:@"/Library/Application Support/YouPIP/yt-pip-overlay.png"];
+        if ([%c(QTMIcon) respondsToSelector:@selector(tintImage:color:)])
+            image = [%c(QTMIcon) tintImage:image color:color];
+        else
+            image = [image _flatImageWithColor:color];
+        if ([image respondsToSelector:@selector(imageFlippedForRightToLeftLayoutDirection)])
+            image = [image imageFlippedForRightToLeftLayoutDirection];
+    });
+    return image;
+}
+
+%new
+- (void)didPressPiP:(id)arg {
+    YTMainAppVideoPlayerOverlayViewController *c = [self valueForKey:@"_eventsDelegate"];
+    YTPlayerViewController *p = [c delegate];
+    YTPlayerView *v = (YTPlayerView *)p.view;
+    YTSingleVideoController *single = [(YTPlaybackControllerUIWrapper *)[v valueForKey:@"_playerViewDelegate"] contentVideo];
+    YTLocalPlaybackController *local = [single delegate];
+    YTPlayerPIPController *controller = [local valueForKey:@"_playerPIPController"];
+    if ([controller canInvokePictureInPicture])
+        [(MLPIPController *)[controller valueForKey:@"_pipController"] startPictureInPicture];
 }
 
 %end
